@@ -14,6 +14,8 @@
 #include<dune/common/typetraits.hh>
 #include<dune/common/exceptions.hh>
 
+#include <omp.h>
+
 namespace Dune
 {
   namespace Amg
@@ -208,20 +210,25 @@ namespace Dune
        * @return True if the coarse level solver is a direct solver.
        */
       bool usesDirectCoarseLevelSolver() const;
+
+      void setContext(const std::string& context)
+      {
+        size_t entry = omp_get_thread_num();
+        threadContext[entry] = context;
+      }
+
+      void addContext(const std::string& context)
+      {
+        size_t entry = omp_get_max_threads();
+        sol[context].resize(entry);
+        if (threadContext.size() != entry)
+          threadContext.resize(entry);
+      }
       
     private:
       /** @brief Multigrid cycle on a level. */
       void mgc();
 
-      typename Hierarchy<Smoother,A>::Iterator smoother;
-      typename OperatorHierarchy::ParallelMatrixHierarchy::ConstIterator matrix;
-      typename ParallelInformationHierarchy::Iterator pinfo;
-      typename OperatorHierarchy::RedistributeInfoList::const_iterator redist;
-      typename OperatorHierarchy::AggregatesMapList::const_iterator aggregates;
-      typename Hierarchy<Domain,A>::Iterator lhs;
-      typename Hierarchy<Domain,A>::Iterator update;
-      typename Hierarchy<Range,A>::Iterator rhs;
-      
       void additiveMgc();
 
       /** @brief Apply pre smoothing on the current level. */
@@ -249,12 +256,47 @@ namespace Dune
       Hierarchy<Smoother,A> smoothers_;
       /** @brief The solver of the coarsest level. */
       CoarseSolver* solver_;
-      /** @brief The right hand side of our problem. */
-      Hierarchy<Range,A>* rhs_;
-      /** @brief The left approximate solution of our problem. */
-      Hierarchy<Domain,A>* lhs_;
-      /** @brief The total update for the outer solver. */
-      Hierarchy<Domain,A>* update_;
+
+      bool predone;
+
+      typedef struct ThreadContext {
+        /** @brief The right hand side of our problem. */
+        Hierarchy<Range,A>* rhs_;
+        /** @brief The left approximate solution of our problem. */
+        Hierarchy<Domain,A>* lhs_;
+        /** @brief The total update for the outer solver. */
+        Hierarchy<Domain,A>* update_;
+        typename Hierarchy<Smoother,A>::Iterator smoother;
+        typename OperatorHierarchy::ParallelMatrixHierarchy::ConstIterator matrix;
+        typename ParallelInformationHierarchy::Iterator pinfo;
+        typename OperatorHierarchy::RedistributeInfoList::const_iterator redist;
+        typename OperatorHierarchy::AggregatesMapList::const_iterator aggregates;
+        typename Hierarchy<Domain,A>::Iterator lhs;
+        typename Hierarchy<Domain,A>::Iterator update;
+        typename Hierarchy<Range,A>::Iterator rhs;
+        std::size_t level;
+      
+        ThreadContext()
+        {
+          rhs_ = 0;
+          lhs_ = 0;
+          update_ = 0;
+        }
+      } ThreadContext;
+
+      //! \brief Maps from solution context to thread context
+      std::map<std::string, std::vector<ThreadContext> > sol;
+      
+      //! \brief Current solution context of each thread
+      std::vector<std::string> threadContext;
+
+      //! \brief Returns the context for the current thread
+      ThreadContext& getThreadContext()
+      {
+        size_t entry = omp_get_thread_num();
+        return sol[threadContext[entry]][entry];
+      }
+
       /** @brief The type of the chooser of the scalar product. */
       typedef Dune::ScalarProductChooser<X,PI,M::category> ScalarProductChooser;
       /** @brief The type of the scalar product for the coarse solver. */
@@ -267,7 +309,6 @@ namespace Dune
       std::size_t preSteps_;
       /** @brief The number of postsmoothing steps. */
       std::size_t postSteps_;
-      std::size_t level;
       bool buildHierarchy_;
       bool additive;
       bool coarsesolverconverged;
@@ -370,6 +411,7 @@ namespace Dune
 
       if(verbosity_>0 && matrices_->parallelInformation().finest()->communicator().rank()==0)
 	std::cout<<"Building Hierarchy of "<<matrices_->maxlevels()<<" levels took "<<watch.elapsed()<<" seconds."<<std::endl;
+      predone = false;
     }
     
     template<class M, class X, class S, class PI, class A>
@@ -386,20 +428,22 @@ namespace Dune
     template<class M, class X, class S, class PI, class A>
     void AMG<M,X,S,PI,A>::pre(Domain& x, Range& b)
     {
+      ThreadContext& context = getThreadContext();
+
       if(smoothers_.levels()>0)
 	smoothers_.finest()->pre(x,b);
       else
 	// No smoother to make x consistent! Do it by hand
 	matrices_->parallelInformation().coarsest()->copyOwnerToAll(x,x);
       Range* copy = new Range(b);
-      rhs_ = new Hierarchy<Range,A>(*copy);
+      context.rhs_ = new Hierarchy<Range,A>(*copy);
       Domain* dcopy = new Domain(x);
-      lhs_ = new Hierarchy<Domain,A>(*dcopy);
+      context.lhs_ = new Hierarchy<Domain,A>(*dcopy);
       dcopy = new Domain(x);
-      update_ = new Hierarchy<Domain,A>(*dcopy);
-      matrices_->coarsenVector(*rhs_);
-      matrices_->coarsenVector(*lhs_);
-      matrices_->coarsenVector(*update_);
+      context.update_ = new Hierarchy<Domain,A>(*dcopy);
+      matrices_->coarsenVector(*context.rhs_);
+      matrices_->coarsenVector(*context.lhs_);
+      matrices_->coarsenVector(*context.update_);
       
       // Preprocess all smoothers
       typedef typename Hierarchy<Smoother,A>::Iterator Iterator;
@@ -407,13 +451,13 @@ namespace Dune
       typedef typename Hierarchy<Domain,A>::Iterator DIterator;
       Iterator coarsest = smoothers_.coarsest();
       Iterator smoother = smoothers_.finest();
-      RIterator rhs = rhs_->finest();
-      DIterator lhs = lhs_->finest();
+      RIterator rhs = context.rhs_->finest();
+      DIterator lhs = context.lhs_->finest();
       if(smoothers_.levels()>0){
 	  
-      assert(lhs_->levels()==rhs_->levels());
-      assert(smoothers_.levels()==lhs_->levels() || matrices_->levels()==matrices_->maxlevels());
-      assert(smoothers_.levels()+1==lhs_->levels() || matrices_->levels()<matrices_->maxlevels());
+      assert(context.lhs_->levels()==context.rhs_->levels());
+      assert(smoothers_.levels()==context.lhs_->levels() || matrices_->levels()==matrices_->maxlevels());
+      assert(smoothers_.levels()+1==context.lhs_->levels() || matrices_->levels()<matrices_->maxlevels());
       
       if(smoother!=coarsest)
 	for(++smoother, ++lhs, ++rhs; smoother != coarsest; ++smoother, ++lhs, ++rhs)
@@ -424,10 +468,10 @@ namespace Dune
       
       // The preconditioner might change x and b. So we have to 
       // copy the changes to the original vectors.
-      x = *lhs_->finest();
-      b = *rhs_->finest();
+      x = *context.lhs_->finest();
+      b = *context.rhs_->finest();
       
-      if(buildHierarchy_ && matrices_->levels()==matrices_->maxlevels()){
+      if(!predone && buildHierarchy_ && matrices_->levels()==matrices_->maxlevels()){
 	// We have the carsest level. Create the coarse Solver
 	SmootherArgs sargs(smootherArgs_);
 	sargs.iterations = 1;
@@ -448,7 +492,7 @@ namespace Dune
 	  coarseSmoother_ = ConstructionTraits<Smoother>::construct(cargs);
 	  scalarProduct_ = ScalarProductChooser::construct(*matrices_->parallelInformation().coarsest());
 	}
-#if HAVE_SUPERLU
+#if 0 && HAVE_SUPERLU
       // Use superlu if we are purely sequential or with only one processor on the coarsest level.
 	if(is_same<ParallelInformation,SequentialInformation>::value // sequential mode 
 	   || matrices_->parallelInformation().coarsest()->communicator().size()==1 //parallel mode and only one processor
@@ -478,13 +522,15 @@ namespace Dune
 						  *coarseSmoother_, 1E-2, 10000, 0);
 		else
 		  solver_ = 0;
-	      }else
+	      }else if (!solver_)
 	      solver_ = new BiCGSTABSolver<X>(const_cast<M&>(*matrices_->matrices().coarsest()), 
 					      *scalarProduct_, 
 					      *coarseSmoother_, 1E-2, 1000, 0);
 	  }
       }
+      predone = true;
     }
+
     template<class M, class X, class S, class PI, class A>
     std::size_t AMG<M,X,S,PI,A>::levels()
     {
@@ -500,26 +546,28 @@ namespace Dune
     template<class M, class X, class S, class PI, class A>
     void AMG<M,X,S,PI,A>::apply(Domain& v, const Range& d)
     {
+      ThreadContext& context = getThreadContext();
+
       if(additive){
-	*(rhs_->finest())=d;
+	*(context.rhs_->finest())=d;
 	additiveMgc();
-	v=*lhs_->finest();
+	v=*context.lhs_->finest();
       }else{
         // Init all iterators for the current level
         initIteratorsWithFineLevel();
 
 	
-	*lhs = v;
-	*rhs = d;
-	*update=0;
-	level=0;
+	*context.lhs = v;
+	*context.rhs = d;
+	*context.update=0;
+	context.level=0;
 		  
 	mgc();
 	
 	if(postSteps_==0||matrices_->maxlevels()==1)
-	  pinfo->copyOwnerToAll(*update, *update);
+	  context.pinfo->copyOwnerToAll(*context.update, *context.update);
 	
-	v=*update;
+	v=*context.update;
       }
       
     }
@@ -527,15 +575,17 @@ namespace Dune
     template<class M, class X, class S, class PI, class A>
     void AMG<M,X,S,PI,A>::initIteratorsWithFineLevel()
     {
-      smoother = smoothers_.finest();
-      matrix = matrices_->matrices().finest();
-      pinfo = matrices_->parallelInformation().finest();
-      redist = 
+      ThreadContext& context = getThreadContext();
+
+      context.smoother = smoothers_.finest();
+      context.matrix = matrices_->matrices().finest();
+      context.pinfo = matrices_->parallelInformation().finest();
+      context.redist = 
         matrices_->redistributeInformation().begin();
-      aggregates = matrices_->aggregatesMaps().begin();
-      lhs = lhs_->finest();
-      update = update_->finest();
-      rhs = rhs_->finest();
+      context.aggregates = matrices_->aggregatesMaps().begin();
+      context.lhs = context.lhs_->finest();
+      context.update = context.update_->finest();
+      context.rhs = context.rhs_->finest();
     }
     
     template<class M, class X, class S, class PI, class A>
@@ -544,40 +594,41 @@ namespace Dune
     {
       
       bool processNextLevel=true;
+      ThreadContext& context = getThreadContext();
       
-      if(redist->isSetup()){
-        redist->redistribute(static_cast<const Range&>(*rhs), rhs.getRedistributed());
-        processNextLevel =rhs.getRedistributed().size()>0;
+      if(context.redist->isSetup()){
+        context.redist->redistribute(static_cast<const Range&>(*context.rhs), context.rhs.getRedistributed());
+        processNextLevel =context.rhs.getRedistributed().size()>0;
         if(processNextLevel){		
           //restrict defect to coarse level right hand side.
-          typename Hierarchy<Range,A>::Iterator fineRhs = rhs++;
-          ++pinfo;
+          typename Hierarchy<Range,A>::Iterator fineRhs = context.rhs++;
+          ++context.pinfo;
           Transfer<typename OperatorHierarchy::AggregatesMap::AggregateDescriptor,Range,ParallelInformation>
-            ::restrict(*(*aggregates), *rhs, static_cast<const Range&>(fineRhs.getRedistributed()), *pinfo);
+            ::restrict(*(*context.aggregates), *context.rhs, static_cast<const Range&>(fineRhs.getRedistributed()), *context.pinfo);
         }
       }else{		
         //restrict defect to coarse level right hand side.
-        typename Hierarchy<Range,A>::Iterator fineRhs = rhs++;
-	  ++pinfo;
+        typename Hierarchy<Range,A>::Iterator fineRhs = context.rhs++;
+	  ++context.pinfo;
 	  Transfer<typename OperatorHierarchy::AggregatesMap::AggregateDescriptor,Range,ParallelInformation>
-	    ::restrict(*(*aggregates), *rhs, static_cast<const Range&>(*fineRhs), *pinfo);
+	    ::restrict(*(*context.aggregates), *context.rhs, static_cast<const Range&>(*fineRhs), *context.pinfo);
       }
       
       if(processNextLevel){
         // prepare coarse system
-        ++lhs;
-        ++update;
-        ++matrix;
-        ++level;
-        ++redist;
+        ++context.lhs;
+        ++context.update;
+        ++context.matrix;
+        ++context.level;
+        ++context.redist;
 
-        if(matrix != matrices_->matrices().coarsest() || matrices_->levels()<matrices_->maxlevels()){
+        if(context.matrix != matrices_->matrices().coarsest() || matrices_->levels()<matrices_->maxlevels()){
           // next level is not the globally coarsest one
-          ++smoother;
-          ++aggregates;
+          ++context.smoother;
+          ++context.aggregates;
         }
         // prepare the update on the next level
-        *update=0;
+        *context.update=0;
       }
       return processNextLevel;
     }
@@ -586,41 +637,42 @@ namespace Dune
     void AMG<M,X,S,PI,A>
     ::moveToFineLevel(bool processNextLevel)
     {
+      ThreadContext& context = getThreadContext();
       if(processNextLevel){
-        if(matrix != matrices_->matrices().coarsest() || matrices_->levels()<matrices_->maxlevels()){
+        if(context.matrix != matrices_->matrices().coarsest() || matrices_->levels()<matrices_->maxlevels()){
           // previous level is not the globally coarsest one
-	    --smoother;
-	    --aggregates;
+	    --context.smoother;
+	    --context.aggregates;
         }
-        --redist;
-        --level;
+        --context.redist;
+        --context.level;
         //prolongate and add the correction (update is in coarse left hand side)
-        --matrix;
+        --context.matrix;
 	
         //typename Hierarchy<Domain,A>::Iterator coarseLhs = lhs--;
-        --lhs;  
-        --pinfo;
+        --context.lhs;  
+        --context.pinfo;
       }
-      if(redist->isSetup()){
+      if(context.redist->isSetup()){
         // Need to redistribute during prolongate
-        lhs.getRedistributed()=0;
+        context.lhs.getRedistributed()=0;
         Transfer<typename OperatorHierarchy::AggregatesMap::AggregateDescriptor,Range,ParallelInformation>
-          ::prolongate(*(*aggregates), *update, *lhs, lhs.getRedistributed(), matrices_->getProlongationDampingFactor(), 
-                       *pinfo, *redist);
+          ::prolongate(*(*context.aggregates), *context.update, *context.lhs, context.lhs.getRedistributed(), matrices_->getProlongationDampingFactor(), 
+                       *context.pinfo, *context.redist);
       }else{
-        *lhs=0;
+        *context.lhs=0;
         Transfer<typename OperatorHierarchy::AggregatesMap::AggregateDescriptor,Range,ParallelInformation>
-          ::prolongate(*(*aggregates), *update, *lhs, 
-                       matrices_->getProlongationDampingFactor(), *pinfo);
+          ::prolongate(*(*context.aggregates), *context.update, *context.lhs, 
+                       matrices_->getProlongationDampingFactor(), *context.pinfo);
       }
       
       
       if(processNextLevel){
-        --update;
-        --rhs;
+        --context.update;
+        --context.rhs;
       }
       
-      *update += *lhs;
+      *context.update += *context.lhs;
     }
     
     
@@ -628,16 +680,17 @@ namespace Dune
     void AMG<M,X,S,PI,A>
     ::presmooth()
     {
+      ThreadContext& context = getThreadContext();
       
       for(std::size_t i=0; i < preSteps_; ++i){
-	    *lhs=0;
-	    SmootherApplier<S>::preSmooth(*smoother, *lhs, *rhs);
+	    *context.lhs=0;
+	    SmootherApplier<S>::preSmooth(*context.smoother, *context.lhs, *context.rhs);
 	    // Accumulate update
-	    *update += *lhs;
+	    *context.update += *context.lhs;
 	    
 	    // update defect
-	    matrix->applyscaleadd(-1,static_cast<const Domain&>(*lhs), *rhs);
-	    pinfo->project(*rhs);
+	    context.matrix->applyscaleadd(-1,static_cast<const Domain&>(*context.lhs), *context.rhs);
+	    context.pinfo->project(*context.rhs);
           }
     }
     
@@ -645,15 +698,16 @@ namespace Dune
     void AMG<M,X,S,PI,A>
      ::postsmooth()
     { 
+        ThreadContext& context = getThreadContext();
       
 	for(std::size_t i=0; i < postSteps_; ++i){
 	  // update defect
-	  matrix->applyscaleadd(-1,static_cast<const Domain&>(*lhs), *rhs);
-	  *lhs=0;
-	  pinfo->project(*rhs);
-	  SmootherApplier<S>::postSmooth(*smoother, *lhs, *rhs);
+	  context.matrix->applyscaleadd(-1,static_cast<const Domain&>(*context.lhs), *context.rhs);
+	  *context.lhs=0;
+	  context.pinfo->project(*context.rhs);
+	  SmootherApplier<S>::postSmooth(*context.smoother, *context.lhs, *context.rhs);
 	  // Accumulate update
-	  *update += *lhs;
+	  *context.update += *context.lhs;
         }
     }
     
@@ -666,22 +720,23 @@ namespace Dune
     
     template<class M, class X, class S, class PI, class A>
     void AMG<M,X,S,PI,A>::mgc(){
-      if(matrix == matrices_->matrices().coarsest() && levels()==maxlevels()){
+      ThreadContext& context = getThreadContext();
+      if(context.matrix == matrices_->matrices().coarsest() && levels()==maxlevels()){
 	// Solve directly
 	InverseOperatorResult res;
 	res.converged=true; // If we do not compute this flag will not get updated
-	if(redist->isSetup()){
-	    redist->redistribute(*rhs, rhs.getRedistributed());
-	  if(rhs.getRedistributed().size()>0){
+	if(context.redist->isSetup()){
+	    context.redist->redistribute(*context.rhs, context.rhs.getRedistributed());
+	  if(context.rhs.getRedistributed().size()>0){
 	    // We are still participating in the computation
-	    pinfo.getRedistributed().copyOwnerToAll(rhs.getRedistributed(), rhs.getRedistributed());
-	    solver_->apply(update.getRedistributed(), rhs.getRedistributed(), res);
+	    context.pinfo.getRedistributed().copyOwnerToAll(context.rhs.getRedistributed(), context.rhs.getRedistributed());
+	    solver_->apply(context.update.getRedistributed(), context.rhs.getRedistributed(), res);
 	  }
-	  redist->redistributeBackward(*update, update.getRedistributed());
-	  pinfo->copyOwnerToAll(*update, *update);
+	  context.redist->redistributeBackward(*context.update, context.update.getRedistributed());
+	  context.pinfo->copyOwnerToAll(*context.update, *context.update);
 	}else{
-	  pinfo->copyOwnerToAll(*rhs, *rhs);
-	  solver_->apply(*update, *rhs, res);
+	  context.pinfo->copyOwnerToAll(*context.rhs, *context.rhs);
+	  solver_->apply(*context.update, *context.rhs, res);
 	}
 
 	if (!res.converged)
@@ -704,7 +759,7 @@ namespace Dune
         *lhs=0;
 #endif	
 
-	if(matrix == matrices_->matrices().finest()){
+	if(context.matrix == matrices_->matrices().finest()){
 	  coarsesolverconverged = matrices_->parallelInformation().finest()->communicator().prod(coarsesolverconverged);
 	  if(!coarsesolverconverged)
 	    DUNE_THROW(MathError, "Coarse solver did not converge");
@@ -717,26 +772,27 @@ namespace Dune
 
     template<class M, class X, class S, class PI, class A>
     void AMG<M,X,S,PI,A>::additiveMgc(){
+      ThreadContext& context = getThreadContext();
       
       // restrict residual to all levels
       typename ParallelInformationHierarchy::Iterator pinfo=matrices_->parallelInformation().finest();
-      typename Hierarchy<Range,A>::Iterator rhs=rhs_->finest();      
-      typename Hierarchy<Domain,A>::Iterator lhs = lhs_->finest();
+      typename Hierarchy<Range,A>::Iterator rhs=context.rhs_->finest();      
+      typename Hierarchy<Domain,A>::Iterator lhs = context.lhs_->finest();
       typename OperatorHierarchy::AggregatesMapList::const_iterator aggregates=matrices_->aggregatesMaps().begin();
       
-      for(typename Hierarchy<Range,A>::Iterator fineRhs=rhs++; fineRhs != rhs_->coarsest(); fineRhs=rhs++, ++aggregates){
+      for(typename Hierarchy<Range,A>::Iterator fineRhs=rhs++; fineRhs != context.rhs_->coarsest(); fineRhs=rhs++, ++aggregates){
 	++pinfo;
 	Transfer<typename OperatorHierarchy::AggregatesMap::AggregateDescriptor,Range,ParallelInformation>
-	  ::restrict(*(*aggregates), *rhs, static_cast<const Range&>(*fineRhs), *pinfo);
+	  ::restrict(*(*context.aggregates), *context.rhs, static_cast<const Range&>(*fineRhs), *pinfo);
       }
       
       // pinfo is invalid, set to coarsest level
       //pinfo = matrices_->parallelInformation().coarsest
       // calculate correction for all levels
-      lhs = lhs_->finest();
+      lhs = context.lhs_->finest();
       typename Hierarchy<Smoother,A>::Iterator smoother = smoothers_.finest();
       
-      for(rhs=rhs_->finest(); rhs != rhs_->coarsest(); ++lhs, ++rhs, ++smoother){
+      for(rhs=context.rhs_->finest(); rhs != context.rhs_->coarsest(); ++lhs, ++rhs, ++smoother){
 	// presmoothing
 	*lhs=0;
 	smoother->apply(*lhs, *rhs);
@@ -757,7 +813,7 @@ namespace Dune
       --pinfo;
       --aggregates;
       
-      for(typename Hierarchy<Domain,A>::Iterator coarseLhs = lhs--; coarseLhs != lhs_->finest(); coarseLhs = lhs--, --aggregates, --pinfo){
+      for(typename Hierarchy<Domain,A>::Iterator coarseLhs = lhs--; coarseLhs != context.lhs_->finest(); coarseLhs = lhs--, --aggregates, --pinfo){
 	Transfer<typename OperatorHierarchy::AggregatesMap::AggregateDescriptor,Range,ParallelInformation>
 	  ::prolongate(*(*aggregates), *coarseLhs, *lhs, 1, *pinfo);
       }
@@ -768,11 +824,13 @@ namespace Dune
     template<class M, class X, class S, class PI, class A>
     void AMG<M,X,S,PI,A>::post(Domain& x)
     {
+      ThreadContext& context = getThreadContext();
+
       if(buildHierarchy_){
-	if(solver_)
-	  delete solver_;
-	if(coarseSmoother_)
-	  ConstructionTraits<Smoother>::deconstruct(coarseSmoother_);
+//        if(solver_)
+//          delete solver_;
+//        if(coarseSmoother_)
+//          ConstructionTraits<Smoother>::deconstruct(coarseSmoother_);
       }
       
       // Postprocess all smoothers
@@ -781,7 +839,7 @@ namespace Dune
       typedef typename Hierarchy<Domain,A>::Iterator DIterator;
       Iterator coarsest = smoothers_.coarsest();
       Iterator smoother = smoothers_.finest();
-      DIterator lhs = lhs_->finest();
+      DIterator lhs = context.lhs_->finest();
       if(smoothers_.levels()>0){
 	if(smoother != coarsest  || matrices_->levels()<matrices_->maxlevels())
 	  smoother->post(*lhs);
@@ -791,12 +849,12 @@ namespace Dune
 	smoother->post(*lhs);
       }
 
-      delete &(*lhs_->finest());
-      delete lhs_;
-      delete &(*update_->finest());
-      delete update_;
-      delete &(*rhs_->finest());
-      delete rhs_;
+      delete &(*context.lhs_->finest());
+      delete context.lhs_;
+      delete &(*context.update_->finest());
+      delete context.update_;
+      delete &(*context.rhs_->finest());
+      delete context.rhs_;
     }
 
     template<class M, class X, class S, class PI, class A>
@@ -805,7 +863,6 @@ namespace Dune
     {
       matrices_->getCoarsestAggregatesOnFinest(cont);
     }
-    
   } // end namespace Amg
 }// end namespace Dune
   
