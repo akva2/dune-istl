@@ -1,0 +1,37 @@
+# -*- makefile -*-
+# $Id: latex 6519 2011-10-23 22:14:31Z christi $
+
+# Rules for latex stuff
+
+# rerun TEX if log-file suggests that
+.tex.dvi:
+	set -e; builddir=$$PWD; \
+	pushd $(srcdir); $(TEX) -output-directory=$$builddir </dev/null $*; popd; \
+	while grep 'Rerun to get' $*.log > /dev/null ; do \
+	  pushd $(srcdir); $(TEX) -output-directory=$$builddir </dev/null $*; popd; \
+	done; \
+	if grep '^\\bibdata{' *.aux > /dev/null \
+	   && grep '^\\citation{' *.aux > /dev/null; \
+	then \
+	  BSTINPUTS=.:$(srcdir):${BSTINPUTS}: BIBINPUTS=.:$(srcdir):${BIBINPUTS}: $(BIBTEX) $* || exit $$?; \
+	  pushd $(srcdir); $(TEX) -output-directory=$$builddir </dev/null $*; popd; \
+	  while grep 'Rerun to get' $*.log > /dev/null ; do \
+	    pushd $(srcdir); $(TEX) -output-directory=$$builddir </dev/null $*; popd; \
+	  done ; \
+	fi
+
+.dvi.pdf:
+	TEXINPUTS=.:$(srcdir):${TEXINPUTS}: $(DVIPDF) $*
+
+.dvi.ps:
+	TEXINPUTS=.:$(srcdir):${TEXINPUTS}: $(DVIPS) $* -o
+
+TEXCLEANFILES = *.aux *.bbl *.blg *.log *.out *.toc *.dvi
+clean-local: latex-clean
+doc-clean-local: latex-doc-clean
+latex-clean:
+	-test -z "$(TEXCLEANFILES)" || rm -f $(TEXCLEANFILES)
+	-rm -rf auto
+
+latex-doc-clean: latex-clean
+	-rm -f *.pdf *.ps

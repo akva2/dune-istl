@@ -1,0 +1,255 @@
+/* config.h.in.  Generated from configure.ac by autoheader.  */
+
+/* If this is set, the member 'size' of FieldVector is a method rather than an
+   enum */
+#undef DUNE_COMMON_FIELDVECTOR_SIZE_IS_METHOD
+
+/* Define to the version of dune-common */
+#undef DUNE_COMMON_VERSION
+
+/* Define to the major version of dune-common */
+#undef DUNE_COMMON_VERSION_MAJOR
+
+/* Define to the minor version of dune-common */
+#undef DUNE_COMMON_VERSION_MINOR
+
+/* Define to the revision of dune-common */
+#undef DUNE_COMMON_VERSION_REVISION
+
+/* Define to the version of dune-istl */
+#undef DUNE_ISTL_VERSION
+
+/* Define to the major version of dune-istl */
+#undef DUNE_ISTL_VERSION_MAJOR
+
+/* Define to the minor version of dune-istl */
+#undef DUNE_ISTL_VERSION_MINOR
+
+/* Define to the revision of dune-istl */
+#undef DUNE_ISTL_VERSION_REVISION
+
+/* Standard debug streams with a level below will collapse to doing nothing */
+#undef DUNE_MINIMAL_DEBUG_LEVEL
+
+/* Define to dummy `main' function (if any) required to link to the Fortran
+   libraries. */
+#undef F77_DUMMY_MAIN
+
+/* Define to dummy `main' function (if any) required to link to the Fortran
+   libraries. */
+#undef FC_DUMMY_MAIN
+
+/* Define if F77 and FC dummy `main' functions are identical. */
+#undef FC_DUMMY_MAIN_EQ_F77
+
+/* Define to a macro mangling the given C identifier (in lower and upper
+   case), which must not contain underscores, for linking with Fortran. */
+#undef FC_FUNC
+
+/* As FC_FUNC, but for C identifiers containing underscores. */
+#undef FC_FUNC_
+
+/* does the compiler support __attribute__((deprecated))? */
+#undef HAS_ATTRIBUTE_DEPRECATED
+
+/* does the compiler support __attribute__((deprecated("message"))? */
+#undef HAS_ATTRIBUTE_DEPRECATED_MSG
+
+/* does the compiler support __attribute__((unused))? */
+#undef HAS_ATTRIBUTE_UNUSED
+
+/* Define to 1 if the <array> C++0x is available and support array::fill */
+#undef HAVE_ARRAY
+
+/* Define if you have a BLAS library. */
+#undef HAVE_BLAS
+
+/* Define to ENABLE_BOOST if the Boost library is available */
+#undef HAVE_BOOST
+
+/* define if the Boost::Fusion headers are available */
+#undef HAVE_BOOST_FUSION
+
+/* Define to 1 if you have <boost/make_shared.hpp>. */
+#undef HAVE_BOOST_MAKE_SHARED_HPP
+
+/* Define to 1 if you have the <boost/shared_ptr.hpp> header file. */
+#undef HAVE_BOOST_SHARED_PTR_HPP
+
+/* Define to 1 if you have the <dlfcn.h> header file. */
+#undef HAVE_DLFCN_H
+
+/* Define to 1 if dune-common was found */
+#undef HAVE_DUNE_COMMON
+
+/* Define to 1 if you have the <inttypes.h> header file. */
+#undef HAVE_INTTYPES_H
+
+/* Define if you have LAPACK library. */
+#undef HAVE_LAPACK
+
+/* Define to 1 if you have the `m' library (-lm). */
+#undef HAVE_LIBM
+
+/* Define to 1 if SHARED_PTR_NAMESPACE::make_shared is usable. */
+#undef HAVE_MAKE_SHARED
+
+/* Define to 1 if your system has a GNU libc compatible `malloc' function, and
+   to 0 otherwise. */
+#undef HAVE_MALLOC
+
+/* Define to 1 if you have the <malloc.h> header file. */
+#undef HAVE_MALLOC_H
+
+/* Define to 1 if you have the <memory> header file. */
+#undef HAVE_MEMORY
+
+/* Define to 1 if you have the <memory.h> header file. */
+#undef HAVE_MEMORY_H
+
+/* Define to 1 if `expansions' is a member of `mem_usage_t'. */
+#undef HAVE_MEM_USAGE_T_EXPANSIONS
+
+/* Define if you have METIS library */
+#undef HAVE_METIS
+
+/* Define if you have the MPI library. This is only true if MPI was found by
+   configure _and_ if the application uses the DUNEMPICPPFLAGS (or the
+   deprecated MPI_CPPFLAGS) */
+#undef HAVE_MPI
+
+/* Define to 1 if nullptr is supported */
+#undef HAVE_NULLPTR
+
+/* Define if you have a PARDISO library. */
+#undef HAVE_PARDISO
+
+/* Define if you have the Parmetis library. This is only true if MPI was found
+   by configure _and_ if the application uses the PARMETIS_CPPFLAGS */
+#undef HAVE_PARMETIS
+
+/* Define to 1 if you have the <rpc/rpc.h> header file. */
+#undef HAVE_RPC_RPC_H
+
+/* Define to 1 if you have the `sqrt' function. */
+#undef HAVE_SQRT
+
+/* Define to 1 if static_assert is supported */
+#undef HAVE_STATIC_ASSERT
+
+/* Define to 1 if you have the <stdint.h> header file. */
+#undef HAVE_STDINT_H
+
+/* Define to 1 if you have the <stdlib.h> header file. */
+#undef HAVE_STDLIB_H
+
+/* Define to 1 if you have the `strchr' function. */
+#undef HAVE_STRCHR
+
+/* Define to 1 if you have the <strings.h> header file. */
+#undef HAVE_STRINGS_H
+
+/* Define to 1 if you have the <string.h> header file. */
+#undef HAVE_STRING_H
+
+/* Define to ENABLE_SUPERLU if SUPERLU is found */
+#undef HAVE_SUPERLU
+
+/* Define to 1 if SUPERLU_DIST is found */
+#undef HAVE_SUPERLU_DIST
+
+/* Define to 1 if you have the <sys/stat.h> header file. */
+#undef HAVE_SYS_STAT_H
+
+/* Define to 1 if you have the <sys/types.h> header file. */
+#undef HAVE_SYS_TYPES_H
+
+/* Define to 1 if you have the <tr1/memory> header file. */
+#undef HAVE_TR1_MEMORY
+
+/* Define to 1 if you have the <tr1/tuple> header file. */
+#undef HAVE_TR1_TUPLE
+
+/* Define to 1 if you have the <tr1/type_traits> header file. */
+#undef HAVE_TR1_TYPE_TRAITS
+
+/* Define to 1 if you have the <tuple> header file. */
+#undef HAVE_TUPLE
+
+/* Define to 1 if you have the <type_traits> header file. */
+#undef HAVE_TYPE_TRAITS
+
+/* Define to 1 if you have the <unistd.h> header file. */
+#undef HAVE_UNISTD_H
+
+/* Define to the sub-directory in which libtool stores uninstalled libraries.
+   */
+#undef LT_OBJDIR
+
+/* Define to 1 MPI supports MPI-2 */
+#undef MPI_2
+
+/* Name of package */
+#undef PACKAGE
+
+/* Define to the address where bug reports for this package should be sent. */
+#undef PACKAGE_BUGREPORT
+
+/* Define to the full name of this package. */
+#undef PACKAGE_NAME
+
+/* Define to the full name and version of this package. */
+#undef PACKAGE_STRING
+
+/* Define to the one symbol short name of this package. */
+#undef PACKAGE_TARNAME
+
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
+
+/* Define to the version of this package. */
+#undef PACKAGE_VERSION
+
+/* The header in which SHARED_PTR can be found */
+#undef SHARED_PTR_HEADER
+
+/* The namespace in which SHARED_PTR can be found */
+#undef SHARED_PTR_NAMESPACE
+
+/* Define to 1 if you have the ANSI C header files. */
+#undef STDC_HEADERS
+
+/* define to 1 if there SLU_DOUBLE imported by header slu_ddefs.h from SuperLU
+   */
+#undef SUPERLU_MIN_VERSION_4_3
+
+/* define to 1 if there is a header slu_ddefs.h in SuperLU */
+#undef SUPERLU_POST_2005_VERSION
+
+/* Define to 1 if your <sys/time.h> declares `struct tm'. */
+#undef TM_IN_SYS_TIME
+
+/* Version number of package */
+#undef VERSION
+
+/* Define to 1 if the X Window System is missing or not being used. */
+#undef X_DISPLAY_MISSING
+
+/* Define to empty if `const' does not conform to ANSI C. */
+#undef const
+
+/* Define to `__inline__' or `__inline' if that's what the C compiler
+   calls it, or to nothing if 'inline' is not supported under any name.  */
+#ifndef __cplusplus
+#undef inline
+#endif
+
+/* Define to rpl_malloc if the replacement function should be used. */
+#undef malloc
+
+/* Define to `unsigned int' if <sys/types.h> does not define. */
+#undef size_t
+
+#include <dune/common/deprecated.hh>
+
+#include <dune/common/unused.hh>
