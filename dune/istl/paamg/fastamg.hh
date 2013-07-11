@@ -51,10 +51,11 @@ namespace Dune
      * the defect calculation to reduce memory transfers.
      * \tparam M The matrix type
      * \tparam X The vector type
+     * \tparam S Dummy smoother param to be compatible with the normal AMG
      * \tparam PI Currently ignored.
      * \tparam A An allocator for X
      */
-    template<class M, class X, class PI=SequentialInformation, class A=std::allocator<X> >
+    template<class M, class X, class S=double, class PI=SequentialInformation, class A=std::allocator<X> >
     class FastAMG : public Preconditioner<X,X>
     {
     public:
@@ -78,6 +79,8 @@ namespace Dune
       typedef X Range;
       /** @brief the type of the coarse solver. */
       typedef InverseOperator<X,X> CoarseSolver;
+
+      typedef typename SmootherTraits<SeqSSOR<typename M::matrix_type,X,X> >::Arguments SmootherArgs;
 
       enum {
         /** @brief The solver category. */
@@ -108,6 +111,7 @@ namespace Dune
        */
       template<class C>
       FastAMG(const Operator& fineOperator, const C& criterion,
+              const SmootherArgs& smootherArgs,
               const Parameters& parms=Parameters(),
               bool symmetric=true,
               const ParallelInformation& pinfo=ParallelInformation());
@@ -233,8 +237,8 @@ namespace Dune
       std::size_t verbosity_;
     };
 
-    template<class M, class X, class PI, class A>
-    FastAMG<M,X,PI,A>::FastAMG(const FastAMG& amg)
+    template<class M, class X, class S, class PI, class A>
+    FastAMG<M,X,S,PI,A>::FastAMG(const FastAMG& amg)
     : matrices_(amg.matrices_), solver_(amg.solver_),
       rhs_(), lhs_(), residual_(), scalarProduct_(amg.scalarProduct_),
       gamma_(amg.gamma_), preSteps_(amg.preSteps_), postSteps_(amg.postSteps_),
@@ -249,9 +253,9 @@ namespace Dune
         residual_=new Hierarchy<Domain,A>(*amg.residual_);
     }
 
-    template<class M, class X, class PI, class A>
-    FastAMG<M,X,PI,A>::FastAMG(const OperatorHierarchy& matrices, CoarseSolver& coarseSolver,
-                               const Parameters& parms, bool symmetric_)
+    template<class M, class X, class S, class PI, class A>
+    FastAMG<M,X,S,PI,A>::FastAMG(const OperatorHierarchy& matrices, CoarseSolver& coarseSolver,
+                                 const Parameters& parms, bool symmetric_)
       : matrices_(&matrices), solver_(&coarseSolver),
         rhs_(), lhs_(), residual_(), scalarProduct_(),
         gamma_(parms.getGamma()), preSteps_(parms.getNoPreSmoothSteps()),
@@ -267,10 +271,11 @@ namespace Dune
       assert(matrices_->isBuilt());
       dune_static_assert((is_same<PI,SequentialInformation>::value), "Currently only sequential runs are supported");
     }
-    template<class M, class X, class PI, class A>
+    template<class M, class X, class S, class PI, class A>
     template<class C>
-    FastAMG<M,X,PI,A>::FastAMG(const Operator& matrix,
+    FastAMG<M,X,S,PI,A>::FastAMG(const Operator& matrix,
                                const C& criterion,
+                               const SmootherArgs& smootherArgs,
                                const Parameters& parms,
                                bool symmetric_,
                                const PI& pinfo)
@@ -292,8 +297,8 @@ namespace Dune
       createHierarchies(criterion, const_cast<Operator&>(matrix), pinfo);
     }
 
-    template<class M, class X, class PI, class A>
-    FastAMG<M,X,PI,A>::~FastAMG()
+    template<class M, class X, class S, class PI, class A>
+    FastAMG<M,X,S,PI,A>::~FastAMG()
     {
       if(buildHierarchy_) {
         if(solver_)
@@ -312,10 +317,10 @@ namespace Dune
       rhs_=nullptr;
     }
 
-    template<class M, class X, class PI, class A>
+    template<class M, class X, class S, class PI, class A>
     template<class C>
-    void FastAMG<M,X,PI,A>::createHierarchies(C& criterion, Operator& matrix,
-                                            const PI& pinfo)
+    void FastAMG<M,X,S,PI,A>::createHierarchies(C& criterion, Operator& matrix,
+                                                const PI& pinfo)
     {
       Timer watch;
       matrices_.reset(new OperatorHierarchy(matrix, pinfo));
@@ -387,8 +392,8 @@ namespace Dune
     }
 
 
-    template<class M, class X, class PI, class A>
-    void FastAMG<M,X,PI,A>::pre(Domain& x, Range& b)
+    template<class M, class X, class S, class PI, class A>
+    void FastAMG<M,X,S,PI,A>::pre(Domain& x, Range& b)
     {
       Timer watch, watch1;
       // Detect Matrix rows where all offdiagonal entries are
@@ -442,20 +447,20 @@ namespace Dune
       x = *lhs_->finest();
       b = *rhs_->finest();
     }
-    template<class M, class X, class PI, class A>
-    std::size_t FastAMG<M,X,PI,A>::levels()
+    template<class M, class X, class S, class PI, class A>
+    std::size_t FastAMG<M,X,S,PI,A>::levels()
     {
       return matrices_->levels();
     }
-    template<class M, class X, class PI, class A>
-    std::size_t FastAMG<M,X,PI,A>::maxlevels()
+    template<class M, class X, class S, class PI, class A>
+    std::size_t FastAMG<M,X,S,PI,A>::maxlevels()
     {
       return matrices_->maxlevels();
     }
 
     /** \copydoc Preconditioner::apply */
-    template<class M, class X, class PI, class A>
-    void FastAMG<M,X,PI,A>::apply(Domain& v, const Range& d)
+    template<class M, class X, class S, class PI, class A>
+    void FastAMG<M,X,S,PI,A>::apply(Domain& v, const Range& d)
     {
       // Init all iterators for the current level
       initIteratorsWithFineLevel();
@@ -473,8 +478,8 @@ namespace Dune
         pinfo->copyOwnerToAll(v, v);
     }
 
-    template<class M, class X, class PI, class A>
-    void FastAMG<M,X,PI,A>::initIteratorsWithFineLevel()
+    template<class M, class X, class S, class PI, class A>
+    void FastAMG<M,X,S,PI,A>::initIteratorsWithFineLevel()
     {
       matrix = matrices_->matrices().finest();
       pinfo = matrices_->parallelInformation().finest();
@@ -486,8 +491,8 @@ namespace Dune
       rhs = rhs_->finest();
     }
 
-    template<class M, class X, class PI, class A>
-    bool FastAMG<M,X,PI,A>
+    template<class M, class X, class S, class PI, class A>
+    bool FastAMG<M,X,S,PI,A>
     ::moveToCoarseLevel()
     {
       bool processNextLevel=true;
@@ -529,8 +534,8 @@ namespace Dune
       return processNextLevel;
     }
 
-    template<class M, class X, class PI, class A>
-    void FastAMG<M,X,PI,A>
+    template<class M, class X, class S, class PI, class A>
+    void FastAMG<M,X,S,PI,A>
     ::moveToFineLevel(bool processNextLevel, Domain& x)
     {
       if(processNextLevel) {
@@ -569,8 +574,8 @@ namespace Dune
     }
 
 
-    template<class M, class X, class PI, class A>
-    void FastAMG<M,X,PI,A>
+    template<class M, class X, class S, class PI, class A>
+    void FastAMG<M,X,S,PI,A>
     ::presmooth(Domain& x, const Range& b)
     {
       GaussSeidelPresmoothDefect<M::matrix_type::blocklevel>::apply(matrix->getmat(),
@@ -579,8 +584,8 @@ namespace Dune
                                                                     b);
     }
 
-    template<class M, class X, class PI, class A>
-    void FastAMG<M,X,PI,A>
+    template<class M, class X, class S, class PI, class A>
+    void FastAMG<M,X,S,PI,A>
     ::postsmooth(Domain& x, const Range& b)
     {
       GaussSeidelPostsmoothDefect<M::matrix_type::blocklevel>
@@ -588,14 +593,14 @@ namespace Dune
     }
 
 
-    template<class M, class X, class PI, class A>
-    bool FastAMG<M,X,PI,A>::usesDirectCoarseLevelSolver() const
+    template<class M, class X, class S, class PI, class A>
+    bool FastAMG<M,X,S,PI,A>::usesDirectCoarseLevelSolver() const
     {
       return IsDirectSolver< CoarseSolver>::value;
     }
 
-    template<class M, class X, class PI, class A>
-    void FastAMG<M,X,PI,A>::mgc(Domain& v, const Range& b){
+    template<class M, class X, class S, class PI, class A>
+    void FastAMG<M,X,S,PI,A>::mgc(Domain& v, const Range& b){
 
       if(matrix == matrices_->matrices().coarsest() && levels()==maxlevels()) {
         // Solve directly
@@ -654,8 +659,8 @@ namespace Dune
 
 
     /** \copydoc Preconditioner::post */
-    template<class M, class X, class PI, class A>
-    void FastAMG<M,X,PI,A>::post(Domain& x)
+    template<class M, class X, class S, class PI, class A>
+    void FastAMG<M,X,S,PI,A>::post(Domain& x)
     {
       delete lhs_;
       lhs_=nullptr;
@@ -665,9 +670,9 @@ namespace Dune
       residual_=nullptr;
     }
 
-    template<class M, class X, class PI, class A>
+    template<class M, class X, class S, class PI, class A>
     template<class A1>
-    void FastAMG<M,X,PI,A>::getCoarsestAggregateNumbers(std::vector<std::size_t,A1>& cont)
+    void FastAMG<M,X,S,PI,A>::getCoarsestAggregateNumbers(std::vector<std::size_t,A1>& cont)
     {
       matrices_->getCoarsestAggregatesOnFinest(cont);
     }
