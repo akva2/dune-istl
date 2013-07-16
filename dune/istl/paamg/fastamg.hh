@@ -243,7 +243,8 @@ namespace Dune
       rhs_(), lhs_(), residual_(), scalarProduct_(amg.scalarProduct_),
       gamma_(amg.gamma_), preSteps_(amg.preSteps_), postSteps_(amg.postSteps_),
       symmetric(amg.symmetric), coarsesolverconverged(amg.coarsesolverconverged),
-      coarseSmoother_(amg.coarseSmoother_), verbosity_(amg.verbosity_)
+      coarseSmoother_(amg.coarseSmoother_), verbosity_(amg.verbosity_),
+      buildHierarchy_(false)
     {
       if(amg.rhs_)
         rhs_=new Hierarchy<Range,A>(*amg.rhs_);
